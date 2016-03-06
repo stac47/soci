@@ -53,6 +53,65 @@ TEST_CASE("SQLite rowid", "[sqlite][rowid][oid]")
     sql << "drop table test1";
 }
 
+struct User
+{
+    long id;
+    std::string name;
+};
+
+namespace soci {
+
+template<>
+struct type_conversion<User>
+{
+    typedef values base_type;
+
+    static void from_base(const values& iRow,
+                           indicator iInd ,
+                           User& oUser)
+    {
+        oUser.id = iRow.get<uint64_t>("id");
+        oUser.name = iRow.get<std::string>("name");
+    }
+
+    static void to_base(const User& iUser, values& oRow, indicator oInd)
+    {
+        oRow.set("id", iUser.id);
+        oRow.set("name", iUser.name);
+        oInd = i_ok;
+    }
+};
+
+} /* namespace soci */
+
+struct user_table_creator : public table_creator_base
+{
+    user_table_creator(soci::session & sql)
+      : table_creator_base(sql)
+    {
+        sql << "CREATE TABLE soci_test ("
+            << "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            << "name TEXT NOT NULL)";
+    }
+};
+
+TEST_CASE("Dynamic Binding", "[sqlite][dynamic binding]")
+{
+    soci::session sql(backEnd, connectString);
+    user_table_creator tableCreator(sql);
+	User newUser {0L, std::string("username")};
+    sql << "INSERT INTO soci_test(name) VALUES(:name)", soci::use(newUser);
+    long id;
+    sql.get_last_insert_id("soci_test", id);
+    CHECK(id == 1);
+    User retrievedUser;
+    sql << "SELECT id, name FROM soci_test WHERE id="<< id,
+        /* soci::into(retrievedUser); */
+        soci::into(retrievedUser.id),
+        soci::into(retrievedUser.name);
+    CHECK(id == retrievedUser.id);
+}
+
 // BLOB test
 struct blob_table_creator : public table_creator_base
 {
